@@ -19,6 +19,20 @@ public class JsontestcomServlet extends HttpServlet {
 	
 	public void doPost(HttpServletRequest req, HttpServletResponse resp)
 			throws IOException {
+		
+		/**
+		 * We need to set the Access-Control-Allow-Origin header to *. Users can opt 
+		 * out of receiving this header by setting the "alloworigin" parameter to false.
+		 */
+		String allow_origin = req.getParameter("alloworigin");
+		if ("false".equals(allow_origin)) {
+			//Do nothing. We may later expand this section to allow users to modify the header itself.
+		}
+		else {
+			resp.setHeader("Access-Control-Allow-Origin", "*");
+		}
+		
+		
 		/**
 		 * First, we grab the requesting url and peel out the subdomain used in 
 		 * the request. Once we have the subdomain isolated, we can figure out 
@@ -27,7 +41,6 @@ public class JsontestcomServlet extends HttpServlet {
 		String requesting_url = req.getRequestURL().toString();
 		int subdomain_index = requesting_url.indexOf(".") + 1;
 		requesting_url = requesting_url.substring(0, subdomain_index);
-		System.out.println("Service Requested: " + requesting_url);
 		
 		/**
 		 * Uncomment the below lines if you want to specify the service via a parameter.
@@ -40,20 +53,28 @@ public class JsontestcomServlet extends HttpServlet {
 		**/
 		
 		
+		
 		//This stores the name:value pairs that go into the response JSON.
 		//We use Object as the value because we want to be free to specify a 
 		//String object, a number object (i.e. java.lang.Integer) or a Boolean value.
 		Hashtable<String, Object> response_map = new Hashtable<String, Object>();
+		
+		/**
+		 * Some functions require us to post malformed or non-json content.
+		 * They can directly store their results into this string, and we'll 
+		 * handle the callbacks and outputstream writing at the end.
+		 */
+		String response_json = null;
 		
 		//Now, figure out what service the user wants, and execute it.
 		if (requesting_url.contains("validate")) {
 			//Validate the incoming JSON
 			
 			try {				
-				String incoming_json = req.getParameter("validate");
+				String incoming_json = req.getParameter("json");
 				
 				if (incoming_json == null) {
-					throw new JSONException(" No validate parameter included. ");
+					throw new JSONException("No JSON to validate. Please post JSON to validate via the json parameter.");
 				}
 				
 				JSONObject json_object = new JSONObject(incoming_json);
@@ -88,7 +109,6 @@ public class JsontestcomServlet extends HttpServlet {
 				 * had something wrong with it. Note the error, and note that validation 
 				 * failed.
 				 */
-				System.out.println(e.getMessage());
 				response_map.put("validate", new Boolean(false));
 				response_map.put("error", e.getMessage());
 			}	
@@ -118,7 +138,7 @@ public class JsontestcomServlet extends HttpServlet {
 				 * start with X-AppEngine. For security purposes, we're not going to return 
 				 * those.
 				 */
-				if (header.startsWith("X-")) {
+				if ((header.toLowerCase()).startsWith("x-appengine")) {
 					break;
 				}
 				
@@ -133,7 +153,14 @@ public class JsontestcomServlet extends HttpServlet {
 			resp.setContentType("text/plain");
 			
 			String code = "alert(\"IP Address: " + req.getRemoteAddr() + "\"); \r\n";
-			code += "alert(\"Browser: " + req.getHeader("User-Agent") + "\");";
+			code += "alert(\"Browser: " + req.getHeader("User-Agent") + "\"); \r\n";
+			
+			String callback = req.getParameter("callback");
+			
+			if (callback != null) {
+				code += callback + "(" + generateGenericJSON() + "); \r\n";
+			}
+			
 			resp.getWriter().print(code);
 			return;
 		}
@@ -148,12 +175,30 @@ public class JsontestcomServlet extends HttpServlet {
 					value = components[i + 1];
 				}
 				catch (ArrayIndexOutOfBoundsException e) {
-					//do nothing
+					//If this exception is thrown, that means there are an odd number of tokens
+					//in the request url (in other terms, there is a key value specified, but no 
+					//value). It's OK, because we'll just put a blank string into the value component.
 				}
 				response_map.put(key, value);
 				i++;
 			}
 			
+		}
+		else if (requesting_url.startsWith("malform")) {
+			//The user wants malformed JSON
+			
+			response_json = generateGenericJSON();
+			response_json = response_json.trim();
+			response_json = response_json.substring(0, response_json.length() - 1);
+			
+		}
+		else if (requesting_url.contains("cookie")) {
+			//The user wants us to set a cookie.
+			javax.servlet.http.Cookie cookie = new javax.servlet.http.Cookie("jsontestdotcom", "jsontestcomsamplecookie");
+			cookie.setMaxAge(60 * 60 * 24 * 14); //Two weeks to expire.
+			resp.addCookie(cookie);
+			
+			response_map.put("cookie", "Cookie is set with name jsontestdotcom and value jsontestcomsamplecookie");
 		}
 		else {
 			//If the request doesn't match anything above, we're just going to send back 
@@ -166,13 +211,16 @@ public class JsontestcomServlet extends HttpServlet {
 			response_map.put("version", version_explain);
 		}
 		
-		String response_json = " ";
-		try {
-			JSONObject conversion = new JSONObject(response_map);
-			response_json = conversion.toString(3);
-		}
-		catch (JSONException e) {
-			response_json = "{\"error\":\"Error occurred, please notify webmaster (at) jsontest (dot) com\"}";
+		if (response_json == null) {
+			//The function did not directly set the json code. We'll create it from the 
+			//response_map function.
+			try {
+				JSONObject conversion = new JSONObject(response_map);
+				response_json = conversion.toString(3);
+			}
+			catch (JSONException e) {
+				response_json = "{\"error\":\"Error occurred, please notify webmaster (at) jsontest (dot) com\"}";
+			}
 		}
 		
 		//Wrap with callback if necessary
@@ -186,18 +234,42 @@ public class JsontestcomServlet extends HttpServlet {
 		 * However, for testing purposes the user may prefer a plain text return type.
 		 */
 		String return_type = req.getParameter("type");
-		if (return_type == null) {
-			resp.setContentType("application/json");
-		}
-		else {
+		if ("text".equals(return_type)) {
 			resp.setContentType("text/plain");
 		}
-		
-		System.out.println("RESPONSE: " + response_json);
+		else {
+			resp.setContentType("application/json");
+		}
 		
 		resp.getWriter().print(response_json);
 		
 	}//end doPost
+	
+	public String generateGenericJSON() {
+		//Create our "good" JSON response
+		JSONObject obj = new JSONObject();
+		
+		String response_json = "";
+		
+		try {
+			obj.put("url", "http://www.jsontest.com");
+			obj.put("number", 42);
+			obj.put("yesorno", true);
+			
+			//We create our malformed JSON by cutting out the last } marker.
+			response_json = obj.toString(3);
+			response_json = response_json.trim();
+		}
+		catch (JSONException e) {
+			//This exception should never be thrown, unfortunately we have to catch it because 
+			//JSONObject.put is declared to be able to throw a JSONException, which only happens
+			//if the key is null, which will never happen.
+			System.out.println("Error in generating generic JSON");
+		}
+		
+		return response_json;
+	}
+	
 	
 	public static Vector<String> getFirstLevelKeys(JSONObject json_object) {
 		Vector<String> key_list = new Vector<String>();
