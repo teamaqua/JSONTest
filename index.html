@@ -109,7 +109,7 @@
 
 <p>The size parameter counts the number of top level keys inside the JSON object.</p>
 
-<p>If invalid JSON is passed in (we'll remove an apostrophe in the value <a href="http://validate.jsontest.com/?validate=%7B%22key%22:value%22%7D">http://validate.jsontest.com/?validate={"key":value"}</a>, then the returned JSON object will note that the parsing failed, and the reason why (as given by the org.json parser).</p>
+<p>If invalid JSON is passed in (we'll remove an apostrophe in the value <a href="http://validate.jsontest.com/?json=%7B%22key%22:value%22%7D">http://validate.jsontest.com/?json={"key":value"}</a>, then the returned JSON object will note that the parsing failed, and the reason why (as given by the org.json parser).</p>
 
 <div class="highlight"><pre><span class="p">{</span>
    <span class="nt">"error"</span><span class="p">:</span> <span class="s2">"Expected a ',' or '}' at 13 [character 14 line 1]"</span><span class="p">,</span>
